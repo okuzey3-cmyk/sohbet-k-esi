@@ -51,6 +51,7 @@ svg{display:block}
 .hello{margin:0 4px 22px}
 .greet{margin:0;font-size:20px;color:var(--ink-soft);font-style:italic}
 .hello h1{margin:2px 0 0;font-size:38px;line-height:1.15;font-weight:700;letter-spacing:-0.01em}
+.hicri{margin:8px 4px 0;font-size:16px;color:var(--ink-soft)}
 
 .arch{
   position:relative;display:block;text-align:center;
@@ -228,6 +229,29 @@ svg{display:block}
   font-size:1.3em;line-height:2;margin:.4em 0 .8em;
 }
 .reader .end{margin-top:2.4em}
+.reader .markable{cursor:pointer;border-radius:8px;transition:background .15s}
+.reader .mark-y{background:rgba(230,178,46,.28)}
+.reader .mark-g{background:rgba(46,142,110,.22)}
+.reader .mark-p{background:rgba(198,84,140,.20)}
+.mark-note{display:block;font-size:.78em;line-height:1.5;color:var(--ink-soft);font-style:italic;margin:-.6em 0 1.05em;padding-left:.2em}
+.mark-bar{
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+  background:var(--card);border:1.5px solid var(--line);border-radius:14px;
+  padding:10px 12px;margin:-.4em 0 1.1em;
+}
+.mark-swatches{display:flex;gap:8px}
+.mark-swatch{width:34px;height:34px;border-radius:50%;border:2px solid var(--line);padding:0}
+.mark-swatch-y{background:#E6B22E}
+.mark-swatch-g{background:#2E8E6E}
+.mark-swatch-p{background:#C6548C}
+.mark-action{
+  min-height:40px;padding:0 14px;border-radius:10px;border:1.5px solid var(--line);
+  background:var(--paper);font-size:16px;font-weight:600;
+}
+.mark-input{
+  flex:1;min-width:140px;min-height:40px;border-radius:10px;border:1.5px solid var(--line);
+  background:var(--paper);padding:0 12px;font:inherit;font-size:16px;color:var(--ink);
+}
 mark.here{background:transparent;box-shadow:-6px 0 0 var(--gold)}
 
 /* ---------- Tablet ve geniş ekran ---------- */
@@ -397,6 +421,45 @@ mark.here{background:transparent;box-shadow:-6px 0 0 var(--gold)}
     return { doc: d, p: e.p, text: d.paras[e.p].t };
   }
 
+  /* ---- hicri tarih ve kandil geri sayımı ---- */
+  var HICRI_NUM_FMT = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', {day: 'numeric', month: 'numeric', year: 'numeric'});
+  function hicriParts(date){
+    var o = {};
+    HICRI_NUM_FMT.formatToParts(date).forEach(function(p){
+      if (p.type === 'day' || p.type === 'month' || p.type === 'year') o[p.type] = parseInt(p.value, 10);
+    });
+    return o;
+  }
+  function hicriLabel(date){
+    try { return new Intl.DateTimeFormat('tr-TR-u-ca-islamic-umalqura', {day: 'numeric', month: 'long', year: 'numeric'}).format(date); }
+    catch (e){ return ''; }
+  }
+  var KANDIL_FIXED = [
+    { m: 3, d: 12, name: 'Mevlid Kandili' },
+    { m: 7, d: 27, name: 'Miraç Kandili' },
+    { m: 8, d: 15, name: 'Berât Kandili' },
+    { m: 9, d: 27, name: 'Kadir Gecesi' }
+  ];
+  function nextKandil(){
+    try {
+      var today = new Date();
+      for (var i = 0; i < 380; i++){
+        var d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+        var hp = hicriParts(d);
+        for (var j = 0; j < KANDIL_FIXED.length; j++){
+          if (hp.month === KANDIL_FIXED[j].m && hp.day === KANDIL_FIXED[j].d) return { i: i, name: KANDIL_FIXED[j].name };
+        }
+        if (hp.month === 7 && hp.day === 1){
+          for (var k = 0; k < 7; k++){
+            var rd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i + k);
+            if (rd.getDay() === 5) return { i: i + k, name: 'Regaip Kandili' };
+          }
+        }
+      }
+    } catch (e){}
+    return null;
+  }
+
   /* ---- namaz vakitleri (İstanbul, Diyanet metodu) ---- */
   var VAKIT_ORDER = [
     { k: 'Imsak', l: 'İmsak' },
@@ -499,8 +562,14 @@ mark.here{background:transparent;box-shadow:-6px 0 0 var(--gold)}
   function home(){
     var ex = todaysExcerpt();
     var lr = lastRead();
+    var hicriText = hicriLabel(new Date());
+    var kandil = nextKandil();
+    if (kandil) hicriText += (kandil.i === 0 ? ' · Bugün ' + kandil.name : ' · ' + kandil.name + '’ne ' + kandil.i + ' gün');
     var kids = [
-      el('header', {'class': 'hello'}, el('p', {'class': 'greet', text: greeting()}), el('h1', {text: 'Sohbet Köşesi'}))
+      el('header', {'class': 'hello'},
+        el('p', {'class': 'greet', text: greeting()}),
+        el('h1', {text: 'Sohbet Köşesi'}),
+        hicriText ? el('p', {'class': 'hicri', text: hicriText}) : null)
     ];
     if (lr){
       kids.push(el('a', {'class': 'resume', href: '#/oku/' + lr.d.id},
@@ -574,6 +643,75 @@ mark.here{background:transparent;box-shadow:-6px 0 0 var(--gold)}
     window.scrollTo(0, 0);
   }
 
+  function zikir(){
+    var targets = [33, 99, 100];
+    var target = parseInt(store.get('sk-zikir-hedef'), 10);
+    if (targets.indexOf(target) === -1) target = 33;
+    var count = parseInt(store.get('sk-zikir-count'), 10);
+    if (isNaN(count) || count < 0) count = 0;
+    var tur = parseInt(store.get('sk-zikir-tur'), 10);
+    if (isNaN(tur) || tur < 0) tur = 0;
+
+    var num = el('span', {'class': 'zikir-num', text: String(count)});
+    var ofSpan = el('span', {'class': 'zikir-of', text: '/ ' + target});
+    var dial = el('button', {'class': 'zikir-dial', type: 'button', 'aria-label': 'Zikir say'}, num, ofSpan);
+    var turLine = el('p', {'class': 'zikir-tur'}, 'Tamamlanan tur: ', el('b', {text: String(tur)}));
+
+    var tbtns = targets.map(function(t){
+      var b = el('button', {type: 'button', text: String(t)});
+      if (t === target) b.classList.add('on');
+      b.addEventListener('click', function(){
+        target = t;
+        store.set('sk-zikir-hedef', String(target));
+        count = 0;
+        store.set('sk-zikir-count', '0');
+        num.textContent = String(count);
+        ofSpan.textContent = '/ ' + target;
+        tbtns.forEach(function(x){ x.classList.remove('on'); });
+        b.classList.add('on');
+      });
+      return b;
+    });
+    var targetRow = el.apply(null, ['div', {'class': 'zikir-target'}].concat(tbtns));
+
+    dial.addEventListener('click', function(){
+      count++;
+      if (count >= target){
+        count = 0;
+        tur++;
+        store.set('sk-zikir-tur', String(tur));
+        turLine.replaceChildren('Tamamlanan tur: ', el('b', {text: String(tur)}));
+        dial.classList.remove('pulse');
+        void dial.offsetWidth;
+        dial.classList.add('pulse');
+        if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+      } else if (navigator.vibrate) navigator.vibrate(10);
+      store.set('sk-zikir-count', String(count));
+      num.textContent = String(count);
+    });
+
+    var minus = el('button', {type: 'button', text: '− 1'});
+    minus.addEventListener('click', function(){
+      if (count > 0){ count--; store.set('sk-zikir-count', String(count)); num.textContent = String(count); }
+    });
+    var reset = el('button', {type: 'button', text: 'Sıfırla'});
+    reset.addEventListener('click', function(){
+      if (!window.confirm('Sayaç ve turlar sıfırlansın mı?')) return;
+      count = 0; tur = 0;
+      store.set('sk-zikir-count', '0'); store.set('sk-zikir-tur', '0');
+      num.textContent = '0';
+      turLine.replaceChildren('Tamamlanan tur: ', el('b', {text: '0'}));
+    });
+    var actions = el('div', {'class': 'zikir-actions'}, minus, reset);
+
+    app.replaceChildren(el('main', {'class': 'page zikir'},
+      el('h1', {text: 'Zikir Sayacı'}),
+      el('p', {'class': 'lead', text: 'Saymak için dairenin ortasına dokunun'}),
+      targetRow, dial, turLine, actions, dock('#/')
+    ));
+    window.scrollTo(0, 0);
+  }
+
   function reader(id, q){
     var d = docById(id);
     if (!d){ location.replace('#/kitaplik'); return; }
@@ -601,6 +739,73 @@ mark.here{background:transparent;box-shadow:-6px 0 0 var(--gold)}
     var body = el('article', {'class': 'reader', lang: 'tr'},
       el('h1', {'class': 'doc-title', text: d.title}),
       el('p', {'class': 'doc-sub', text: d.sub}));
+
+    /* ---- renkli işaretleme ve not ---- */
+    var marks = {};
+    try { marks = JSON.parse(store.get('sk-mark-' + id) || '{}'); } catch (e){ marks = {}; }
+    function saveMarks(){ store.set('sk-mark-' + id, JSON.stringify(marks)); }
+    var openBar = null;
+    function closeBar(){ if (openBar && openBar.parentNode) openBar.parentNode.removeChild(openBar); openBar = null; }
+    function applyMark(n, i){
+      n.classList.remove('mark-y', 'mark-g', 'mark-p');
+      var oldNote = document.getElementById('note' + i);
+      if (oldNote) oldNote.parentNode.removeChild(oldNote);
+      var m = marks[i];
+      if (!m) return;
+      n.classList.add('mark-' + m.color);
+      if (m.note){
+        var note = el('span', {'class': 'mark-note', id: 'note' + i, text: '📝 ' + m.note});
+        n.parentNode.insertBefore(note, n.nextSibling);
+      }
+    }
+    function openToolbar(n, i){
+      var wasOpenHere = openBar && openBar.previousSibling === n;
+      closeBar();
+      if (wasOpenHere) return;
+      var colors = ['y', 'g', 'p'];
+      var swatches = colors.map(function(c){
+        var b = el('button', {'class': 'mark-swatch mark-swatch-' + c, type: 'button', 'aria-label': 'Renkle işaretle'});
+        b.addEventListener('click', function(ev){
+          ev.stopPropagation();
+          marks[i] = marks[i] || {};
+          marks[i].color = c;
+          saveMarks();
+          applyMark(n, i);
+          closeBar();
+        });
+        return b;
+      });
+      var swatchRow = el.apply(null, ['div', {'class': 'mark-swatches'}].concat(swatches));
+      var noteBtn = el('button', {'class': 'mark-action', type: 'button', text: 'Not ekle'});
+      var removeBtn = el('button', {'class': 'mark-action', type: 'button', text: 'Kaldır'});
+      removeBtn.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        delete marks[i];
+        saveMarks();
+        applyMark(n, i);
+        closeBar();
+      });
+      var bar = el('div', {'class': 'mark-bar'}, swatchRow, noteBtn, removeBtn);
+      noteBtn.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        var input = el('input', {'class': 'mark-input', type: 'text', placeholder: 'Kısa bir not yazın…', value: (marks[i] && marks[i].note) || ''});
+        var saveBtn = el('button', {'class': 'mark-action', type: 'button', text: 'Kaydet'});
+        saveBtn.addEventListener('click', function(ev2){
+          ev2.stopPropagation();
+          var v = input.value.trim();
+          marks[i] = marks[i] || { color: 'y' };
+          marks[i].note = v;
+          saveMarks();
+          applyMark(n, i);
+          closeBar();
+        });
+        bar.replaceChildren(input, saveBtn);
+        input.focus();
+      });
+      n.parentNode.insertBefore(bar, n.nextSibling);
+      openBar = bar;
+    }
+
     d.paras.forEach(function(x, i){
       var n;
       if (x.k === 'h') n = el('h2', {text: x.t});
@@ -610,6 +815,14 @@ mark.here{background:transparent;box-shadow:-6px 0 0 var(--gold)}
       else n = el('p', {text: x.t});
       n.id = 'p' + i;
       body.appendChild(n);
+      if (x.k !== 'h'){
+        n.classList.add('markable');
+        n.addEventListener('click', function(ev){
+          if (ev.target.closest && ev.target.closest('a')) return;
+          openToolbar(n, i);
+        });
+        applyMark(n, i);
+      }
     });
     body.appendChild(el('a', {'class': 'cta end', href: '#/kitaplik'}, 'Kitaplığa dönün'));
 
@@ -654,6 +867,7 @@ mark.here{background:transparent;box-shadow:-6px 0 0 var(--gold)}
     switch (parts[0]){
       case 'gunun': gunun(); break;
       case 'kitaplik': kitaplik(); break;
+      case 'zikir': zikir(); break;
       case 'oku': reader(parts[1], q); break;
       default: home();
     }
